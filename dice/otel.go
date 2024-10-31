@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -37,7 +38,8 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 	otel.SetTextMapPropagator(prop)
 
 	// 设置 trace provider.
-	tracerProvider, err := newTraceProvider()
+	// tracerProvider, err := newTraceProvider()
+	tracerProvider, err := newJaegerTraceProvider(ctx)
 	if err != nil {
 		// handleErr(err)
 		return
@@ -65,8 +67,9 @@ func newPropagator() propagation.TextMapPropagator {
 	)
 }
 
+// newTraceProvider创建一个往终端输出的 traceExporter
 func newTraceProvider() (*trace.TracerProvider, error) {
-	// 创建一个往终端输出的 traceExporter
+
 	traceExporter, err := stdouttrace.New(
 		stdouttrace.WithPrettyPrint())
 	if err != nil {
@@ -77,6 +80,25 @@ func newTraceProvider() (*trace.TracerProvider, error) {
 		trace.WithBatcher(traceExporter,
 			// 默认为 5s。为便于演示，设置为 1s。
 			trace.WithBatchTimeout(time.Second)),
+	)
+	return traceProvider, nil
+}
+
+// newJaegerTraceProvider 创建一个往jaeger发送数据的trace
+func newJaegerTraceProvider(ctx context.Context) (*trace.TracerProvider, error) {
+
+	exporter, err := otlptracehttp.New(
+		ctx,
+		otlptracehttp.WithEndpoint("127.0.0.1:4318"), // jaeger 默认http端口
+		otlptracehttp.WithTimeout(time.Second),
+		otlptracehttp.WithInsecure(), // jaeger只提供使用https，需要传个空证书
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	traceProvider := trace.NewTracerProvider(
+		trace.WithBatcher(exporter, trace.WithBatchTimeout(time.Second)),
 	)
 	return traceProvider, nil
 }
